@@ -1,0 +1,127 @@
+import json
+import base64
+import hmac
+import hashlib
+import os
+from flask import Flask, request, make_response, render_template_string
+
+app = Flask(__name__)
+
+# === שכבת הגנה 1: מפתח סודי ===
+# המפתח הזה משמש לחתימה על הנתונים.
+# התוקף לא יודע אותו, ולכן לא יכול לזייף חתימות.
+SECRET_KEY = b"MySuperSecretKey_DoNotShare"
+
+
+class Player:
+    def __init__(self, username, level=1, coins=10, is_admin=False):
+        self.username = username
+        self.level = level
+        self.coins = coins
+        self.is_admin = is_admin
+
+    # המרה ל-Dictionary (בשביל JSON)
+    def to_dict(self):
+        return {
+            "username": self.username,
+            "level": self.level,
+            "coins": self.coins,
+            "is_admin": self.is_admin
+        }
+
+
+# פונקציה ליצירת חתימה (HMAC)
+def sign_data(data_str):
+    return hmac.new(SECRET_KEY, data_str.encode(), hashlib.sha256).hexdigest()
+
+
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Store</title>
+    <style>
+        body { font-family: 'Courier New', monospace; background-color: #0d1117; color: #c9d1d9; text-align: center; padding: 50px; }
+        .card { border: 2px solid #2ea043; padding: 20px; display: inline-block; background-color: #161b22; border-radius: 10px; min-width: 400px; }
+        h1 { color: #2ea043; }
+        .secure-badge { background-color: #2ea043; color: white; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
+        .stats { color: #79c0ff; font-size: 18px; margin-bottom: 20px; border-bottom: 1px solid #30363d; padding-bottom: 15px; text-align: left; }
+        .shop-item { border: 1px solid #d2a8ff; padding: 15px; margin-top: 20px; color: #d2a8ff; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🛡️ SECURE GAME 🛡️</h1>
+        <div class="secure-badge">JSON + HMAC Protected</div>
+        <br><br>
+
+        <div class="stats">
+            👤 USER: <b>{{ player.username }}</b><br>
+            ⭐ LVL: {{ player.level }}<br>
+            💰 COINS: {{ player.coins }}<br>
+            🛡️ ADMIN: {{ '✅ YES' if player.is_admin else '❌ NO' }}
+        </div>
+
+        <div class="shop-item">
+            <h3>🏆 The Golden Flag 🏆</h3>
+            <p>Price: 1,000,000 Coins</p>
+            {% if player.coins >= 1000000 or player.is_admin %}
+                <p style="color: green;">FLAG: CTF{S3cur1ty_B3st_Pr4ct1c3s}</p>
+            {% else %}
+                <p style="color: red;">🔒 INSUFFICIENT FUNDS</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+
+@app.route('/')
+def home():
+    cookie_value = request.cookies.get('secure_session')
+    player_data = None
+
+    if cookie_value:
+        try:
+            # פירוק ה-Cookie: המידע בנפרד והחתימה בנפרד
+            decoded = base64.b64decode(cookie_value).decode()
+            data_json, signature = decoded.split("::")
+
+            # === שכבת הגנה 2: בדיקת חתימה ===
+            # אנחנו מחשבים מחדש את החתימה לפי המידע שקיבלנו
+            expected_signature = sign_data(data_json)
+
+            # אם החתימה לא תואמת - מישהו נגע במידע!
+            if hmac.compare_digest(expected_signature, signature):
+                # === שכבת הגנה 3: שימוש ב-JSON ===
+                # JSON לא יכול להריץ קוד, רק להחזיק מידע
+                data_dict = json.loads(data_json)
+                player_data = Player(**data_dict)
+            else:
+                print("[!] TAMPERING DETECTED: Invalid signature!")
+        except Exception as e:
+            print(f"[!] Error: {e}")
+
+    # יצירת שחקן חדש אם אין (או אם הייתה פריצה)
+    if not player_data:
+        player_data = Player("Guest_Secure")
+
+        # סריאליזציה בטוחה
+        data_json = json.dumps(player_data.to_dict())
+        signature = sign_data(data_json)
+
+        # חיבור המידע והחתימה עם מפריד
+        final_payload = f"{data_json}::{signature}"
+        cookie_val = base64.b64encode(final_payload.encode()).decode()
+
+        resp = make_response(render_template_string(HTML_TEMPLATE, player=player_data))
+        resp.set_cookie('secure_session', cookie_val)
+        return resp
+
+    return render_template_string(HTML_TEMPLATE, player=player_data)
+
+
+if __name__ == '__main__':
+    print("[*] Secure Server running on port 5001")
+    app.run(host='0.0.0.0', port=5001)
