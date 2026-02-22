@@ -1,53 +1,62 @@
-# 🎮 The Hacker Store - Insecure Deserialization Project
+# 👾 The Hacker Store - Insecure Deserialization Project
+
 **Author:** Bar Lahat  
 **Vulnerability:** Python Pickle Insecure Deserialization  
-**Impact:** Logic Manipulation (Cheating) & Remote Code Execution (RCE via Web Shell)
+**Impact:** Logic Manipulation (Cheating) & Remote Code Execution (RCE via Route Injection)
 
-## 📌 Project Overview
+---
+
+## 📝 Project Overview
 This project demonstrates a critical web vulnerability: **Insecure Deserialization**.
-We simulate a game store where user state is serialized insecurely using Python's `pickle` module.
 
-The project demonstrates two attack vectors and a comprehensive fix:
-1.  **Logic Exploit:** Modifying serialized objects to gain **Infinite Money** and **Admin Privileges**.
-2.  **RCE Exploit:** Injecting a malicious payload to plant a permanent **Web Shell** (Backdoor) on the server.
-3.  **Secure Implementation:** A patched version using **JSON** and **HMAC Signatures**.
+In the simulation, we have a game store where the user's state (coins, admin status) is stored in a cookie. Because the server uses Python's `pickle` module to read this cookie, it is vulnerable to attackers who can manipulate the data or even execute arbitrary code on the server.
+
+
+
+---
 
 ## 📂 File Structure
-* `vulnerable_game.py`: The vulnerable Flask application (The Store). Uses `pickle`.
-* `secure_game.py`: The secured Flask application. Uses `json` + `HMAC`.
-* `exploit_cheat.py`: Generates a payload to modify user stats (Coins/Admin).
-* `exploit_backdoor.py`: Generates a payload that uses PowerShell to drop a `shell.html` backdoor.
+
+* **`vulnerable_game.py`**: The Flask application containing the vulnerability. It trusts the `game_session` cookie blindly using `pickle.loads()`.
+* **`secure_game.py`**: The patched version. It uses Flask's encrypted session and features a dedicated `security_audit` logger.
+* **`exploit_cheat.py`**: A script that generates a malicious cookie to grant the user 1,000,000 coins and Admin privileges.
+* **`exploit_terminal.py`**: A sophisticated RCE exploit that injects a hidden terminal route (`/_t`) directly into the running Flask app memory.
+
+---
 
 ## 🚀 How to Run the Demo
 
 ### Part 1: Logic Attack (The Cheat)
-1.  Run the vulnerable server:
+1.  **Run the vulnerable server:**
     ```bash
     python vulnerable_game.py
     ```
-2.  Visit `http://127.0.0.1:5000`. You are a "Guest" with 10 coins.
-3.  Run `python exploit_cheat.py`, copy the cookie, inject it, and refresh.
-4.  **Result:** You are now Admin, have 1,000,000 coins, and the Flag is unlocked.
+2.  Visit `http://127.0.0.1:5000`. You start as a "Guest_Noob" with 10 coins.
+3.  Run `python exploit_cheat.py`. Copy the generated Base64 string.
+4.  Replace your `game_session` cookie in the browser and refresh.
+    * **Result:** You are now **Master_Hacker** with 1,000,000 coins and **Admin: ✅ YES**.
 
-### Part 2: RCE Attack (The Web Shell)
+### Part 2: RCE Attack (Flask Route Injection)
 1.  Ensure `vulnerable_game.py` is running.
-2.  Run `python exploit_backdoor.py`, copy the cookie, inject it, and refresh.
-3.  Navigate to the secret backdoor: `http://127.0.0.1:5000/page/shell.html`
-4.  **Result:** You have full command execution access. Try running `dir` or `whoami`.
+2.  Run `python exploit_terminal.py` and copy the malicious cookie.
+3.  Inject the cookie into your browser and refresh the home page (this triggers the injection in the server's memory).
+4.  Navigate to the hidden terminal: `http://127.0.0.1:5000/_t`.
+    * **Result:** You now have a **Micro Terminal** on the server. Try running commands like `whoami` or `dir`.
 
-### Part 3: The Fix (Secure Server)
+### Part 3: The Fix & Security Auditing
 1.  Stop the vulnerable server and run the secure one:
     ```bash
     python secure_game.py
     ```
-2.  Visit `http://127.0.0.1:5001` (Note: Port 5001).
-3.  Try injecting the payloads from Part 1 or Part 2.
-4.  **Result:** The server detects the invalid signature/format, rejects the cookie, and resets you to a safe "Guest" profile.
-
-## 🛡️ Mitigation Strategy
-To fix Insecure Deserialization, we applied two layers of defense in `secure_game.py`:
-1.  **Format Change (JSON):** We replaced `pickle` (which executes code) with `json` (which handles data only). This eliminates the RCE vulnerability.
-2.  **Integrity Check (HMAC):** We added a cryptographic signature (HMAC-SHA256) to the cookie. If a user modifies their coins/level, the signature mismatch causes the server to reject the data.
+2.  Visit `http://127.0.0.1:5001`. The server now uses cryptographically signed sessions.
+3.  Try to access the honeypot: `http://127.0.0.1:5001/admin-panel`.
+    * **Result:** Access is denied (403), and the attempt is logged with your IP address in `security.log`.
 
 ---
-*For Educational Purposes Only.*
+
+## 🛡️ Mitigation Strategy
+In `secure_game.py`, we implemented a **"Defense in Depth"** approach:
+
+* **Safe Serialization:** We replaced `pickle` with Flask's built-in session, which uses `itsdangerous` to sign data. It cannot be used to execute code.
+* **Integrity Checking:** Any attempt to modify the cookie results in a signature mismatch, and Flask will simply ignore the session.
+* **Security Logging:** We created a dedicated `security_logger` that records every new session, page refresh, and unauthorized access attempt into a persistent log file for auditing.
