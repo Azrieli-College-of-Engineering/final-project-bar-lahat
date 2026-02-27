@@ -60,3 +60,4 @@ In `secure_game.py`, we implemented a **"Defense in Depth"** approach:
 * **Safe Serialization:** We replaced `pickle` with Flask's built-in session, which uses `itsdangerous` to sign data. It cannot be used to execute code.
 * **Integrity Checking:** Any attempt to modify the cookie results in a signature mismatch, and Flask will simply ignore the session.
 * **Security Logging:** We created a dedicated `security_logger` that records every new session, page refresh, and unauthorized access attempt into a persistent log file for auditing.
+=======
